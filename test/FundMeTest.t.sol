@@ -11,11 +11,16 @@ contract FundMeTest is Test {
         fundMe = new FundMe();
     }
 
-    function testMinDollorIsFive() public {
+    function testMinDollorIsFive() public view {
         assertEq(fundMe.MINIMUM_USD(), 5e18);
     }
 
-    function testOwnerIsMsgSender() public {
-        assertEq(fundMe.i_owner(), msg.sender);
+    function testOwnerIsMsgSender() public view {
+        assertEq(fundMe.i_owner(), address(this));
+    }
+
+    function testPriceFeedVersionIsAccurate() public view {
+        uint256 version = fundMe.getVersion();
+        assertEq(version, 4);
     }
 }
