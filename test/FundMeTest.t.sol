@@ -4,9 +4,11 @@ pragma solidity ^0.8.18;
 import {Test, console} from "forge-std/Test.sol";
 import {FundMe} from "../src/FundMe.sol";
 import {DeployFundMe} from "../script/DeployFundMe.s.sol";
+import {HelperConfig} from "../script/HelperConfig.s.sol";
 
 contract FundMeTest is Test {
-    FundMe fundMe;
+    FundMe public fundMe;
+    HelperConfig public helperConfig;
 
     address USER = makeAddr("user");
 
@@ -15,8 +17,8 @@ contract FundMeTest is Test {
 
     function setUp() external {
         // fundMe = new FundMe(0x694AA1769357215DE4FAC081bf1f309aDC325306);
-        DeployFundMe deployFundMe = new DeployFundMe();
-        fundMe = deployFundMe.run();
+        DeployFundMe deployer = new DeployFundMe();
+        (fundMe, helperConfig) = deployer.deployFundMe();
         vm.deal(USER, STATING_BALANCE); 
     }
 
@@ -25,7 +27,7 @@ contract FundMeTest is Test {
     }
 
     function testOwnerIsMsgSender() public view {
-        assertEq(fundMe.i_owner(), msg.sender);
+        assertEq(fundMe.getOwner(), msg.sender);
     }
 
     function testPriceFeedVersionIsAccurate() public view {
@@ -33,15 +35,79 @@ contract FundMeTest is Test {
         assertEq(version, 4);
     }
 
+    function testPriceFeedSetCorrectly() public {
+        address retreivedPriceFeed = address(fundMe.getPriceFeed());
+        // (address expectedPriceFeed) = helperConfig.activeNetworkConfig();
+        address expectedPriceFeed = helperConfig.getConfigByChainId(block.chainid).priceFeed;
+        assertEq(retreivedPriceFeed, expectedPriceFeed);
+    }
+
     function testFundFailsWithoutEnoughEth() public {
         vm.expectRevert();
         fundMe.fund();
     }
 
-    function testFundUpdatesFundedDataStructure() public {
-        vm.prank(USER);
-        fundMe.fund{value: SEND_VALUE}();
+    function testFundUpdatesFundedDataStructure() public funded {
         uint256 amountFunded = fundMe.getAddressToAmountFunded(USER);
         assertEq(amountFunded, SEND_VALUE);
+    }
+
+    function testAddFundersToArrayOfFunders() public funded {
+        address funder = fundMe.getFunder(0);
+        assertEq(funder, USER);
+    }
+
+    modifier funded() {
+        vm.prank(USER);
+        fundMe.fund{value: SEND_VALUE}();
+        assert(address(fundMe).balance > 0);
+        _;
+    }
+
+    function testOnlyOwnerCanWithdraw() public funded {
+        vm.expectRevert();
+        fundMe.withdraw();
+        vm.stopPrank();
+    }
+
+    function testWithdrawWithASingleFunder() public funded {
+        //Arrange
+        uint256 startingOwnerBalance = fundMe.getOwner().balance;
+        uint256 startingFundMeBalance = address(fundMe).balance;
+
+        //Act
+        vm.startPrank(fundMe.getOwner());
+        fundMe.withdraw();
+        vm.stopPrank();
+
+        //Assert
+        uint256 endingOwnerBalance = fundMe.getOwner().balance;
+        uint256 endingFundMeBalance = address(fundMe).balance;
+        assertEq(endingFundMeBalance, 0);
+        assertEq(startingFundMeBalance + startingOwnerBalance , endingOwnerBalance);
+    }
+
+    function testWithdrawFromMultipleFunders() public funded {
+
+        //Arrange
+        uint160 numberOfFunders = 10;
+        uint160 startingFunderIndex = 1;
+
+        for (uint160 i = startingFunderIndex; i < numberOfFunders; i++) {
+            hoax(address(i), SEND_VALUE);
+            fundMe.fund{value: SEND_VALUE}();
+        }
+
+        //Act
+        uint256 startingOwnerBalance = fundMe.getOwner().balance;
+        uint256 startingFundMeBalance = address(fundMe).balance;
+
+        vm.startPrank(fundMe.getOwner());
+        fundMe.withdraw();
+        vm.stopPrank();
+
+        // Assert
+        assert(address(fundMe).balance == 0);
+        assertEq(fundMe.getOwner().balance, startingOwnerBalance + startingFundMeBalance);
     }
 }

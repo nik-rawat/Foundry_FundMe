@@ -9,27 +9,22 @@ error FundMe__NotOwner();
 contract FundMe {
     using PriceConvertor for uint256;
 
-    mapping (address funder => uint amountFunded) private s_addressToAmountFunded;
+    mapping (address funder => uint256 amountFunded) private s_addressToAmountFunded;
     address [] private s_funders;
 
     address public immutable i_owner;
     uint256 public constant MINIMUM_USD = 5e18;
     AggregatorV3Interface private s_priceFeed;
 
-
     constructor (address priceFeed) {
         s_priceFeed = AggregatorV3Interface(priceFeed);
         i_owner = msg.sender;
     }
 
-    function getVersion() public view returns (uint256) {
-        return s_priceFeed.version();
-    }
-
     function fund() public payable {
-        require( msg.value.getConversionRate() >= MINIMUM_USD, "Didn't sent enough ETH");
+        require( msg.value.getConversionRate(s_priceFeed) >= MINIMUM_USD, "Didn't sent enough ETH");
         s_funders.push(msg.sender);
-        s_addressToAmountFunded[msg.sender] += msg.value.getConversionRate();
+        s_addressToAmountFunded[msg.sender] += msg.value;
     }
 
     function withdraw() public onlyOwner {
@@ -55,7 +50,7 @@ contract FundMe {
 
     modifier onlyOwner() {
         // require(msg.sender == i_owner, "Sender is not the owner!");
-        if (msg.sender == i_owner) {
+        if (msg.sender != i_owner) {
             revert FundMe__NotOwner();
         }
         _;
@@ -73,11 +68,24 @@ contract FundMe {
     View / Pure Functions (Getters)
      */
 
+
+    function getVersion() public view returns (uint256) {
+        return s_priceFeed.version();
+    }
+
     function getAddressToAmountFunded(address fundingAddress) external view returns (uint256) {
         return s_addressToAmountFunded[fundingAddress];
     }
 
     function getFunder(uint256 index) external view returns (address) {
         return s_funders[index];
+    }
+
+    function getOwner() public view returns (address) {
+        return i_owner;
+    }
+
+    function getPriceFeed() public view returns (AggregatorV3Interface) {
+        return s_priceFeed;
     }
 }
